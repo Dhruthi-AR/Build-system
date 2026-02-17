@@ -42,11 +42,19 @@ export const TrackerLayout: React.FC = () => {
                         justifyContent: 'space-between'
                     }}
                 >
-                    {/* Logo / Brand (Optional per requirements, but good for structure) */}
-                    <div style={{ fontWeight: 600, fontSize: 18, letterSpacing: '-0.02em' }}>
+                    {/* Logo / Brand */}
+                    <NavLink
+                        to="/"
+                        style={{
+                            fontWeight: 600,
+                            fontSize: 18,
+                            letterSpacing: '-0.02em',
+                            textDecoration: 'none',
+                            color: colors.text
+                        }}
+                    >
                         Job Tracker
-                    </div>
-
+                    </NavLink>
                     {/* Desktop Navigation */}
                     <div
                         className="desktop-nav"
