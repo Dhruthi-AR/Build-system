@@ -17,15 +17,16 @@ const FilterBar: React.FC<{
     const [mode, setMode] = useState('');
     const [experience, setExperience] = useState('');
     const [source, setSource] = useState('');
+    const [status, setStatus] = useState('');
     const [sortBy, setSortBy] = useState('Latest');
 
     // Debounce search
     useEffect(() => {
         const timer = setTimeout(() => {
-            onFilterChange({ keyword, location, mode, experience, source, sortBy });
+            onFilterChange({ keyword, location, mode, experience, source, status, sortBy });
         }, 300);
         return () => clearTimeout(timer);
-    }, [keyword, location, mode, experience, source, sortBy, onFilterChange]);
+    }, [keyword, location, mode, experience, source, status, sortBy, onFilterChange]);
 
     const selectStyle = {
         padding: '8px 12px',
@@ -96,6 +97,23 @@ const FilterBar: React.FC<{
                 <option value="Onsite">Onsite</option>
             </select>
 
+            <select style={selectStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="">All Statuses</option>
+                <option value="Not Applied">Not Applied</option>
+                <option value="Applied">Applied</option>
+                <option value="Selected">Selected</option>
+                <option value="Rejected">Rejected</option>
+            </select>
+
+            <select style={selectStyle} value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="">All Sources</option>
+                <option value="LinkedIn">LinkedIn</option>
+                <option value="Naukri">Naukri</option>
+                <option value="Indeed">Indeed</option>
+                <option value="Company Website">Company Website</option>
+                <option value="Referral">Referral</option>
+            </select>
+
             <div style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <ArrowUpDown size={16} color="rgba(0,0,0,0.5)" />
                 <select style={{ ...selectStyle, border: 'none', paddingLeft: 0, fontWeight: 500 }} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
@@ -108,11 +126,20 @@ const FilterBar: React.FC<{
     );
 };
 
+import { JobStatus, StatusUpdate } from '../types/status';
+
 export const Dashboard: React.FC = () => {
     const [savedIds, setSavedIds] = useState<string[]>(() => {
         const saved = localStorage.getItem('kodnest_saved_jobs');
         return saved ? JSON.parse(saved) : [];
     });
+
+    const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>(() => {
+        const stored = localStorage.getItem('kodnest_job_statuses');
+        return stored ? JSON.parse(stored) : {};
+    });
+
+    const [toast, setToast] = useState<string | null>(null);
 
     const [prefs, setPrefs] = useState<Preferences | null>(null);
     const [showOnlyMatches, setShowOnlyMatches] = useState(false);
@@ -121,7 +148,7 @@ export const Dashboard: React.FC = () => {
 
     // State for filtering
     const [activeFilters, setActiveFilters] = useState({
-        keyword: '', location: '', mode: '', experience: '', source: '', sortBy: 'Latest'
+        keyword: '', location: '', mode: '', experience: '', source: '', status: '', sortBy: 'Latest'
     });
 
     // Load preferences
@@ -140,6 +167,32 @@ export const Dashboard: React.FC = () => {
             localStorage.setItem('kodnest_saved_jobs', JSON.stringify(newSaved));
             return newSaved;
         });
+    };
+
+    const handleStatusChange = (id: string, newStatus: JobStatus) => {
+        setJobStatuses(prev => {
+            const updated = { ...prev, [id]: newStatus };
+            localStorage.setItem('kodnest_job_statuses', JSON.stringify(updated));
+            return updated;
+        });
+
+        // Log status update for Digest
+        const job = jobs.find(j => j.id === id);
+        if (job && newStatus !== 'Not Applied') {
+            const update: StatusUpdate = {
+                jobId: id,
+                jobTitle: job.title,
+                company: job.company,
+                status: newStatus,
+                timestamp: new Date().toISOString()
+            };
+            const updates = JSON.parse(localStorage.getItem('kodnest_status_updates') || '[]');
+            // Add to beginning
+            localStorage.setItem('kodnest_status_updates', JSON.stringify([update, ...updates].slice(0, 20)));
+
+            setToast(`Status updated: ${newStatus}`);
+            setTimeout(() => setToast(null), 3000);
+        }
     };
 
     // Derive display list
@@ -178,6 +231,12 @@ export const Dashboard: React.FC = () => {
     }
     if (activeFilters.source) {
         displayJobs = displayJobs.filter(j => j.source === activeFilters.source);
+    }
+    if (activeFilters.status) {
+        displayJobs = displayJobs.filter(j => {
+            const currentStatus = jobStatuses[j.id] || 'Not Applied';
+            return currentStatus === activeFilters.status;
+        });
     }
 
     // 3. Sort
@@ -269,8 +328,10 @@ export const Dashboard: React.FC = () => {
                         job={job}
                         isSaved={savedIds.includes(job.id)}
                         matchScore={prefs ? job.score : undefined}
+                        status={jobStatuses[job.id] || 'Not Applied'}
                         onSave={handleSave}
                         onView={setSelectedJob}
+                        onStatusChange={handleStatusChange}
                     />
                 ))}
             </div>
@@ -286,6 +347,26 @@ export const Dashboard: React.FC = () => {
             )}
 
             <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} />
+
+            {toast && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: '#111',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: radii.pill,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    animation: 'fadeIn 0.3s ease-out',
+                    zIndex: 100
+                }}>
+                    {toast}
+                </div>
+            )}
         </div>
     );
 };

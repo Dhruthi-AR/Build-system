@@ -3,15 +3,19 @@ import { Job } from '../data/jobs';
 import { colors, spacing, radii } from '../designSystem';
 import { Bookmark, BookmarkCheck, ExternalLink, Eye, MapPin, Building2, Clock } from 'lucide-react';
 
+import { JobStatus } from '../types/status';
+
 interface JobCardProps {
     job: Job;
     isSaved: boolean;
     matchScore?: number;
+    status: JobStatus;
     onSave: (id: string) => void;
     onView: (job: Job) => void;
+    onStatusChange: (id: string, status: JobStatus) => void;
 }
 
-export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, matchScore, onSave, onView }) => {
+export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, matchScore, status, onSave, onView, onStatusChange }) => {
     const [isHovered, setIsHovered] = useState(false);
 
     // Determine score color
@@ -108,7 +112,33 @@ export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, matchScore, onSa
             </p>
 
             {/* Footer Actions */}
-            <div style={{ marginTop: 'auto', paddingTop: spacing.sm, display: 'flex', gap: spacing.sm }}>
+            <div style={{ marginTop: 'auto', paddingTop: spacing.sm, display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
+                <select
+                    value={status}
+                    onChange={(e) => onStatusChange(job.id, e.target.value as JobStatus)}
+                    style={{
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        border: '1px solid rgba(17,17,17,0.2)',
+                        backgroundColor: status === 'Not Applied' ? 'white' :
+                            status === 'Applied' ? '#EBF8FF' :
+                                status === 'Selected' ? '#F0FDF4' : '#FEF2F2',
+                        color: status === 'Not Applied' ? colors.text :
+                            status === 'Applied' ? '#0044cc' :
+                                status === 'Selected' ? '#15803d' : '#b91c1c',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        outline: 'none',
+                        cursor: 'pointer'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <option value="Not Applied">Not Applied</option>
+                    <option value="Applied">Applied</option>
+                    <option value="Selected">Selected</option>
+                    <option value="Rejected">Rejected</option>
+                </select>
+
                 <Button
                     variant="secondary"
                     onClick={() => onView(job)}
@@ -129,7 +159,10 @@ export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, matchScore, onSa
                 </Button>
                 <Button
                     variant="secondary"
-                    onClick={() => window.open(job.applyUrl, '_blank')}
+                    onClick={() => {
+                        if (status === 'Not Applied') onStatusChange(job.id, 'Applied');
+                        window.open(job.applyUrl, '_blank');
+                    }}
                     icon={<ExternalLink size={16} />}
                     style={{ marginLeft: 'auto' }}
                 >

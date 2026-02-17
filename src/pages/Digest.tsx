@@ -6,11 +6,14 @@ import { Preferences } from '../types/preferences';
 import { Copy, Mail, ExternalLink, Calendar, RefreshCcw, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { StatusUpdate } from '../types/status';
+
 export const Digest: React.FC = () => {
     const [digest, setDigest] = useState<Job[]>([]);
     const [prefs, setPrefs] = useState<Preferences | null>(null);
     const [generatedDate, setGeneratedDate] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const [statusUpdates, setStatusUpdates] = useState<StatusUpdate[]>([]);
 
     useEffect(() => {
         // 1. Load Preferences
@@ -26,6 +29,12 @@ export const Digest: React.FC = () => {
         if (storedDigest) {
             setDigest(JSON.parse(storedDigest));
             setGeneratedDate(today);
+        }
+
+        // 3. Load Status Updates
+        const updates = localStorage.getItem('kodnest_status_updates');
+        if (updates) {
+            setStatusUpdates(JSON.parse(updates));
         }
     }, []);
 
@@ -288,6 +297,32 @@ export const Digest: React.FC = () => {
                                 })
                             )}
                         </div>
+
+                        {/* Status Updates Section */}
+                        {statusUpdates.length > 0 && (
+                            <div style={{ padding: spacing.lg, borderTop: '1px solid rgba(17,17,17,0.06)', backgroundColor: '#FAFAFA' }}>
+                                <h3 style={{ fontSize: 16, margin: '0 0 12px 0', fontFamily: 'Georgia, serif', color: colors.text }}>
+                                    Recent Status Updates
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {statusUpdates.slice(0, 5).map((update, i) => (
+                                        <div key={i} style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', color: 'rgba(17,17,17,0.7)' }}>
+                                            <span>
+                                                <strong style={{ fontWeight: 600 }}>{update.jobTitle}</strong> at {update.company}
+                                            </span>
+                                            <span style={{
+                                                fontWeight: 600,
+                                                color: update.status === 'Applied' ? '#0044cc' :
+                                                    update.status === 'Selected' ? '#15803d' :
+                                                        update.status === 'Rejected' ? '#b91c1c' : colors.text
+                                            }}>
+                                                {update.status}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Email Footer */}
                         <div style={{ padding: spacing.lg, backgroundColor: '#FAFAFA', borderTop: '1px solid rgba(17,17,17,0.06)', fontSize: 12, color: 'rgba(17,17,17,0.5)', textAlign: 'center' }}>
