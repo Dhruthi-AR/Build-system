@@ -6,12 +6,22 @@ import { Bookmark, BookmarkCheck, ExternalLink, Eye, MapPin, Building2, Clock } 
 interface JobCardProps {
     job: Job;
     isSaved: boolean;
+    matchScore?: number;
     onSave: (id: string) => void;
     onView: (job: Job) => void;
 }
 
-export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, onSave, onView }) => {
+export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, matchScore, onSave, onView }) => {
     const [isHovered, setIsHovered] = useState(false);
+
+    // Determine score color
+    let scoreColor = '#999999';
+    if (matchScore !== undefined) {
+        if (matchScore >= 80) scoreColor = '#1F7A1F'; // Green
+        else if (matchScore >= 60) scoreColor = '#D97706'; // Amber
+        else if (matchScore >= 40) scoreColor = '#4B5563'; // Neutral
+        else scoreColor = '#9CA3AF'; // Grey
+    }
 
     return (
         <div
@@ -43,17 +53,33 @@ export const JobCard: React.FC<JobCardProps> = ({ job, isSaved, onSave, onView }
                         <span>{job.company}</span>
                     </div>
                 </div>
-                <div
-                    style={{
-                        fontSize: 12,
-                        color: 'rgba(17,17,17,0.4)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4
-                    }}
-                >
-                    <Clock size={12} />
-                    {job.postedDaysAgo === 0 ? 'Today' : `${job.postedDaysAgo}d ago`}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {matchScore !== undefined && matchScore > 0 && (
+                        <div
+                            style={{
+                                padding: '2px 8px',
+                                borderRadius: radii.pill,
+                                backgroundColor: scoreColor,
+                                color: 'white',
+                                fontSize: 12,
+                                fontWeight: 700
+                            }}
+                        >
+                            {matchScore}%
+                        </div>
+                    )}
+                    <div
+                        style={{
+                            fontSize: 12,
+                            color: 'rgba(17,17,17,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4
+                        }}
+                    >
+                        <Clock size={12} />
+                        {job.postedDaysAgo === 0 ? 'Today' : `${job.postedDaysAgo}d ago`}
+                    </div>
                 </div>
             </div>
 
