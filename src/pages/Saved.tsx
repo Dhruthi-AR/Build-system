@@ -4,9 +4,15 @@ import { JobCard } from '../components/JobCard';
 import { JobModal } from '../components/JobModal';
 import { colors, spacing } from '../designSystem';
 
+import { JobStatus } from '../types/status';
+
 export const Saved: React.FC = () => {
     const [savedIds, setSavedIds] = useState<string[]>([]);
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+    const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>(() => {
+        const stored = localStorage.getItem('kodnest_job_statuses');
+        return stored ? JSON.parse(stored) : {};
+    });
 
     useEffect(() => {
         const saved = localStorage.getItem('kodnest_saved_jobs');
@@ -22,6 +28,14 @@ export const Saved: React.FC = () => {
             const newSaved = prev.filter(item => item !== id); // Only removing makes sense here
             localStorage.setItem('kodnest_saved_jobs', JSON.stringify(newSaved));
             return newSaved;
+        });
+    };
+
+    const handleStatusChange = (id: string, newStatus: JobStatus) => {
+        setJobStatuses(prev => {
+            const updated = { ...prev, [id]: newStatus };
+            localStorage.setItem('kodnest_job_statuses', JSON.stringify(updated));
+            return updated;
         });
     };
 
@@ -101,8 +115,10 @@ export const Saved: React.FC = () => {
                         key={job.id}
                         job={job}
                         isSaved={true} // Always active here
+                        status={jobStatuses[job.id] || 'Not Applied'}
                         onSave={handleSave}
                         onView={setSelectedJob}
+                        onStatusChange={handleStatusChange}
                     />
                 ))}
             </div>

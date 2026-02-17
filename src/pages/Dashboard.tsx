@@ -3,7 +3,10 @@ import { jobs, Job } from '../data/jobs';
 import { JobCard } from '../components/JobCard';
 import { JobModal } from '../components/JobModal';
 import { colors, spacing, radii } from '../designSystem';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal, ArrowUpDown, Filter } from 'lucide-react';
+import { Preferences } from '../types/preferences';
+import { calculateMatchScore, extractSalary } from '../utils/scoring';
+import { NavLink } from 'react-router-dom';
 
 // Filter Component
 const FilterBar: React.FC<{
@@ -14,14 +17,16 @@ const FilterBar: React.FC<{
     const [mode, setMode] = useState('');
     const [experience, setExperience] = useState('');
     const [source, setSource] = useState('');
+    const [status, setStatus] = useState('');
+    const [sortBy, setSortBy] = useState('Latest');
 
     // Debounce search
     useEffect(() => {
         const timer = setTimeout(() => {
-            onFilterChange({ keyword, location, mode, experience, source });
+            onFilterChange({ keyword, location, mode, experience, source, status, sortBy });
         }, 300);
         return () => clearTimeout(timer);
-    }, [keyword, location, mode, experience, source, onFilterChange]);
+    }, [keyword, location, mode, experience, source, status, sortBy, onFilterChange]);
 
     const selectStyle = {
         padding: '8px 12px',
@@ -92,15 +97,36 @@ const FilterBar: React.FC<{
                 <option value="Onsite">Onsite</option>
             </select>
 
+            <select style={selectStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="">All Statuses</option>
+                <option value="Not Applied">Not Applied</option>
+                <option value="Applied">Applied</option>
+                <option value="Selected">Selected</option>
+                <option value="Rejected">Rejected</option>
+            </select>
+
             <select style={selectStyle} value={source} onChange={(e) => setSource(e.target.value)}>
                 <option value="">All Sources</option>
                 <option value="LinkedIn">LinkedIn</option>
                 <option value="Naukri">Naukri</option>
                 <option value="Indeed">Indeed</option>
+                <option value="Company Website">Company Website</option>
+                <option value="Referral">Referral</option>
             </select>
+
+            <div style={{ borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ArrowUpDown size={16} color="rgba(0,0,0,0.5)" />
+                <select style={{ ...selectStyle, border: 'none', paddingLeft: 0, fontWeight: 500 }} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                    <option value="Latest">Latest</option>
+                    <option value="Match Score">Match Score</option>
+                    <option value="Salary">Salary (High to Low)</option>
+                </select>
+            </div>
         </div>
     );
 };
+
+import { JobStatus, StatusUpdate } from '../types/status';
 
 export const Dashboard: React.FC = () => {
     const [savedIds, setSavedIds] = useState<string[]>(() => {
@@ -108,8 +134,30 @@ export const Dashboard: React.FC = () => {
         return saved ? JSON.parse(saved) : [];
     });
 
+    const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>(() => {
+        const stored = localStorage.getItem('kodnest_job_statuses');
+        return stored ? JSON.parse(stored) : {};
+    });
+
+    const [toast, setToast] = useState<string | null>(null);
+
+    const [prefs, setPrefs] = useState<Preferences | null>(null);
+    const [showOnlyMatches, setShowOnlyMatches] = useState(false);
+
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-    const [filteredJobs, setFilteredJobs] = useState<Job[]>(jobs);
+
+    // State for filtering
+    const [activeFilters, setActiveFilters] = useState({
+        keyword: '', location: '', mode: '', experience: '', source: '', status: '', sortBy: 'Latest'
+    });
+
+    // Load preferences
+    useEffect(() => {
+        const stored = localStorage.getItem('jobTrackerPreferences');
+        if (stored) {
+            setPrefs(JSON.parse(stored));
+        }
+    }, []);
 
     const handleSave = (id: string) => {
         setSavedIds(prev => {
@@ -121,52 +169,151 @@ export const Dashboard: React.FC = () => {
         });
     };
 
-    const handleFilterChange = (filters: any) => {
-        let result = [...jobs];
+    const handleStatusChange = (id: string, newStatus: JobStatus) => {
+        setJobStatuses(prev => {
+            const updated = { ...prev, [id]: newStatus };
+            localStorage.setItem('kodnest_job_statuses', JSON.stringify(updated));
+            return updated;
+        });
 
-        if (filters.keyword) {
-            const k = filters.keyword.toLowerCase();
-            result = result.filter(j =>
-                j.title.toLowerCase().includes(k) ||
-                j.company.toLowerCase().includes(k) ||
-                j.description.toLowerCase().includes(k)
-            );
-        }
-        if (filters.location) {
-            if (filters.location === 'Remote') {
-                // If specifically selecting Remote location, it might overlap with Mode,
-                // but user request implies Location dropdown.
-                // Our "Remote" job location logic: sometimes location is listed as Remote.
-                result = result.filter(j => j.location.includes('Remote') || j.mode === 'Remote');
-            } else {
-                result = result.filter(j => j.location.includes(filters.location));
-            }
-        }
-        if (filters.mode) {
-            result = result.filter(j => j.mode === filters.mode);
-        }
-        if (filters.experience) {
-            result = result.filter(j => j.experience === filters.experience);
-        }
-        if (filters.source) {
-            result = result.filter(j => j.source === filters.source);
-        }
+        // Log status update for Digest
+        const job = jobs.find(j => j.id === id);
+        if (job && newStatus !== 'Not Applied') {
+            const update: StatusUpdate = {
+                jobId: id,
+                jobTitle: job.title,
+                company: job.company,
+                status: newStatus,
+                timestamp: new Date().toISOString()
+            };
+            const updates = JSON.parse(localStorage.getItem('kodnest_status_updates') || '[]');
+            // Add to beginning
+            localStorage.setItem('kodnest_status_updates', JSON.stringify([update, ...updates].slice(0, 20)));
 
-        setFilteredJobs(result);
+            setToast(`Status updated: ${newStatus}`);
+            setTimeout(() => setToast(null), 3000);
+        }
     };
+
+    // Derive display list
+    let displayJobs = jobs.map(job => {
+        // Calculate score if prefs exist
+        const score = prefs ? calculateMatchScore(job, prefs) : 0;
+        return { ...job, score };
+    });
+
+    // 1. Filter by "Show Only Matches"
+    if (showOnlyMatches && prefs) {
+        displayJobs = displayJobs.filter(j => j.score >= prefs.minMatchScore);
+    }
+
+    // 2. Apply Filters (AND logic)
+    if (activeFilters.keyword) {
+        const k = activeFilters.keyword.toLowerCase();
+        displayJobs = displayJobs.filter(j =>
+            j.title.toLowerCase().includes(k) ||
+            j.company.toLowerCase().includes(k) ||
+            j.description.toLowerCase().includes(k)
+        );
+    }
+    if (activeFilters.location) {
+        if (activeFilters.location === 'Remote') {
+            displayJobs = displayJobs.filter(j => j.location.includes('Remote') || j.mode === 'Remote');
+        } else {
+            displayJobs = displayJobs.filter(j => j.location.includes(activeFilters.location));
+        }
+    }
+    if (activeFilters.mode) {
+        displayJobs = displayJobs.filter(j => j.mode === activeFilters.mode);
+    }
+    if (activeFilters.experience) {
+        displayJobs = displayJobs.filter(j => j.experience === activeFilters.experience);
+    }
+    if (activeFilters.source) {
+        displayJobs = displayJobs.filter(j => j.source === activeFilters.source);
+    }
+    if (activeFilters.status) {
+        displayJobs = displayJobs.filter(j => {
+            const currentStatus = jobStatuses[j.id] || 'Not Applied';
+            return currentStatus === activeFilters.status;
+        });
+    }
+
+    // 3. Sort
+    displayJobs.sort((a, b) => {
+        if (activeFilters.sortBy === 'Match Score') {
+            return b.score - a.score;
+        }
+        if (activeFilters.sortBy === 'Salary') {
+            return extractSalary(b.salaryRange) - extractSalary(a.salaryRange);
+        }
+        // Default: Latest
+        return a.postedDaysAgo - b.postedDaysAgo;
+    });
+
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-            <div style={{ marginBottom: spacing.md, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <h1 style={{ fontFamily: 'Georgia, serif', margin: 0, fontSize: 32, color: colors.text }}>
-                    Exploration Dashboard
-                </h1>
-                <span style={{ fontSize: 14, color: 'rgba(17,17,17,0.5)' }}>
-                    {filteredJobs.length} jobs found
-                </span>
+            <div style={{ marginBottom: spacing.md, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
+                <div>
+                    <h1 style={{ fontFamily: 'Georgia, serif', margin: 0, fontSize: 32, color: colors.text }}>
+                        Exploration Dashboard
+                    </h1>
+                    <span style={{ fontSize: 14, color: 'rgba(17,17,17,0.5)' }}>
+                        {displayJobs.length} jobs found
+                    </span>
+                </div>
+
+                {/* Match Toggle & Preferences Link */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md }}>
+                    {prefs ? (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500 }}>
+                            <div
+                                style={{
+                                    width: 36,
+                                    height: 20,
+                                    backgroundColor: showOnlyMatches ? colors.accent : '#ccc',
+                                    borderRadius: 20,
+                                    position: 'relative',
+                                    transition: 'background-color 0.2s'
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        width: 16,
+                                        height: 16,
+                                        backgroundColor: 'white',
+                                        borderRadius: '50%',
+                                        position: 'absolute',
+                                        top: 2,
+                                        left: showOnlyMatches ? 18 : 2,
+                                        transition: 'left 0.2s'
+                                    }}
+                                />
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={showOnlyMatches}
+                                onChange={(e) => setShowOnlyMatches(e.target.checked)}
+                                style={{ display: 'none' }}
+                            />
+                            Show only matches ({'>'}{prefs.minMatchScore}%)
+                        </label>
+                    ) : (
+                        <NavLink to="/settings" style={{ fontSize: 14, textDecoration: 'none', color: colors.accent, fontWeight: 500 }}>
+                            Set preferences to enable matching →
+                        </NavLink>
+                    )}
+                </div>
             </div>
 
-            <FilterBar onFilterChange={handleFilterChange} />
+            {!prefs && (
+                <div style={{ padding: spacing.md, backgroundColor: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: radii.container, marginBottom: spacing.lg, color: '#92400E' }}>
+                    <strong>Tip:</strong> Set your preferences in the Settings page to activate intelligent matching and scoring.
+                </div>
+            )}
+
+            <FilterBar onFilterChange={setActiveFilters} />
 
             <div
                 style={{
@@ -175,24 +322,51 @@ export const Dashboard: React.FC = () => {
                     gap: spacing.lg
                 }}
             >
-                {filteredJobs.map(job => (
+                {displayJobs.map(job => (
                     <JobCard
                         key={job.id}
                         job={job}
                         isSaved={savedIds.includes(job.id)}
+                        matchScore={prefs ? job.score : undefined}
+                        status={jobStatuses[job.id] || 'Not Applied'}
                         onSave={handleSave}
                         onView={setSelectedJob}
+                        onStatusChange={handleStatusChange}
                     />
                 ))}
             </div>
 
-            {filteredJobs.length === 0 && (
-                <div style={{ padding: 40, textAlign: 'center', color: 'rgba(17,17,17,0.4)' }}>
-                    No jobs match your filters. Try adjusting them.
+            {displayJobs.length === 0 && (
+                <div style={{ padding: 60, textAlign: 'center', color: 'rgba(17,17,17,0.5)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                    <Filter size={48} style={{ opacity: 0.2 }} />
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: 18, color: colors.text }}>No roles match your criteria.</h3>
+                        <p style={{ margin: '8px 0 0 0' }}>Adjust filters or lower your match threshold.</p>
+                    </div>
                 </div>
             )}
 
             <JobModal job={selectedJob} onClose={() => setSelectedJob(null)} />
+
+            {toast && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: '#111',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: radii.pill,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    animation: 'fadeIn 0.3s ease-out',
+                    zIndex: 100
+                }}>
+                    {toast}
+                </div>
+            )}
         </div>
     );
 };
