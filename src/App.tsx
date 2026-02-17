@@ -1,6 +1,7 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { TrackerLayout } from './components/TrackerLayout';
+import { Landing } from './pages/Landing';
 import { Dashboard } from './pages/Dashboard';
 import { Saved } from './pages/Saved';
 import { Digest } from './pages/Digest';
@@ -12,7 +13,7 @@ export const App: React.FC = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<TrackerLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Landing />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="saved" element={<Saved />} />
           <Route path="digest" element={<Digest />} />
