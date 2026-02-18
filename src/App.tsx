@@ -24,6 +24,7 @@ export const App: React.FC = () => {
           <Route path="proof" element={<Proof />} />
           <Route path="jt/07-test" element={<TestChecklist />} />
           <Route path="jt/08-ship" element={<Ship />} />
+          <Route path="jt/proof" element={<Proof />} />
         </Route>
       </Routes>
     </BrowserRouter>
